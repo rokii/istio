@@ -90,6 +90,7 @@ type cliOptions struct { // nolint: maligned
 	listenedNamespace       string
 	istioCaStorageNamespace string
 	kubeConfigFile          string
+	domainSuffix            string
 
 	certChainFile   string
 	signingCertFile string
@@ -184,6 +185,8 @@ func init() {
 	flags.StringVar(&opts.kubeConfigFile, "kube-config", "",
 		"Specifies path to kubeconfig file. This must be specified when not running inside a Kubernetes pod.")
 
+	flags.StringVar(&opts.domainSuffix, "domain", "cluster.local","Specifies k8s cluster domain suffix.")
+
 	// Configuration if Citadel accepts key/cert configured through arguments.
 	flags.StringVar(&opts.certChainFile, "cert-chain", "", "Path to the certificate chain file")
 	flags.StringVar(&opts.signingCertFile, "signing-cert", "", "Path to the CA signing certificate file")
@@ -269,7 +272,7 @@ func main() {
 
 // fqdn returns the k8s cluster dns name for the citdal service.
 func fqdn() string {
-	return fmt.Sprintf("istio-citadel.%v.svc.cluster.local", opts.istioCaStorageNamespace)
+	return fmt.Sprintf("istio-citadel.%v.svc.%v", opts.istioCaStorageNamespace, opts.domainSuffix)
 }
 
 func runCA() {

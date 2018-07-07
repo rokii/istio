@@ -33,6 +33,8 @@ spec:
           - "-a"
           - {{ .Release.Namespace }}
 {{- end }}
+          - "--domain"
+          - {{ .Values.global.domainSuffix }}
           ports:
           - containerPort: 8080
           - containerPort: 15010

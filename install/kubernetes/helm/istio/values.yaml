@@ -105,6 +105,9 @@ global:
   # If not set, controller watches all namespaces
   oneNamespace: false
 
+  # Set k8s DNS domain suffix
+  domainSuffix: cluster.local
+
   # Whether to perform server-side validation of configuration.
   configValidation: true
 
