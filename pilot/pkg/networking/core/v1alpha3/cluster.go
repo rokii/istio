@@ -118,7 +118,7 @@ func (configgen *ConfigGeneratorImpl) buildOutboundClusters(env model.Environmen
 				}
 			} else {
 				// set TLSSettings if configmap global settings specifies MUTUAL_TLS, and we skip external destination.
-				if env.Mesh.AuthPolicy == meshconfig.MeshConfig_MUTUAL_TLS && !service.MeshExternal {
+				if env.Mesh.AuthPolicy == meshconfig.MeshConfig_MUTUAL_TLS && !service.MeshExternal && proxy.Type == model.Sidecar {
 					applyUpstreamTLSSettings(defaultCluster, buildIstioMutualTLS(upstreamServiceAccounts))
 				}
 			}
@@ -375,7 +375,7 @@ func applyLoadBalancer(cluster *v2.Cluster, lb *networking.LoadBalancerSettings)
 	if lb == nil {
 		return
 	}
-	// TODO: RING_HASH and MAGLEV
+	// TODO: MAGLEV
 	switch lb.GetSimple() {
 	case networking.LoadBalancerSettings_LEAST_CONN:
 		cluster.LbPolicy = v2.Cluster_LEAST_REQUEST
@@ -389,6 +389,16 @@ func applyLoadBalancer(cluster *v2.Cluster, lb *networking.LoadBalancerSettings)
 	}
 
 	// DO not do if else here. since lb.GetSimple returns a enum value (not pointer).
+
+	consistentHash := lb.GetConsistentHash()
+	if consistentHash != nil {
+		cluster.LbPolicy = v2.Cluster_RING_HASH
+		cluster.LbConfig = &v2.Cluster_RingHashLbConfig_{
+			RingHashLbConfig: &v2.Cluster_RingHashLbConfig{
+				MinimumRingSize: &types.UInt64Value{Value: uint64(consistentHash.GetMinimumRingSize())},
+			},
+		}
+	}
 }
 
 // ALPNH2Only advertises that Proxy is going to use HTTP/2 when talking to the cluster.
@@ -476,12 +486,7 @@ func applyUpstreamTLSSettings(cluster *v2.Cluster, tls *networking.TLSSettings) 
 }
 
 func setUpstreamProtocol(cluster *v2.Cluster, port *model.Port) {
-	switch port.Protocol {
-	case model.ProtocolHTTP:
-		cluster.ProtocolSelection = v2.Cluster_USE_DOWNSTREAM_PROTOCOL
-	case model.ProtocolGRPC:
-		fallthrough
-	case model.ProtocolHTTP2:
+	if port.Protocol.IsHTTP2() {
 		cluster.Http2ProtocolOptions = &core.Http2ProtocolOptions{
 			// Envoy default value of 100 is too low for data path.
 			MaxConcurrentStreams: &types.UInt32Value{

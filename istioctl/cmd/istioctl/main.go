@@ -37,6 +37,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/serializer"
 	"k8s.io/client-go/discovery"
 	"k8s.io/client-go/dynamic"
+
 	// import all known client auth plugins
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
 	"k8s.io/client-go/rest"
@@ -104,6 +105,24 @@ var (
 		model.IngressRule.Type:       true,
 		model.DestinationPolicy.Type: true,
 		model.EgressRule.Type:        true,
+	}
+
+	// mustList tracks which Istio types we SHOULD NOT silently ignore if we can't list.
+	// The user wants reasonable error messages when doing `get all` against a different
+	// server version.
+	mustList = map[string]bool{
+		model.Gateway.Type:              true,
+		model.VirtualService.Type:       true,
+		model.DestinationRule.Type:      true,
+		model.ServiceEntry.Type:         true,
+		model.HTTPAPISpec.Type:          true,
+		model.HTTPAPISpecBinding.Type:   true,
+		model.QuotaSpec.Type:            true,
+		model.QuotaSpecBinding.Type:     true,
+		model.AuthenticationPolicy.Type: true,
+		model.ServiceRole.Type:          true,
+		model.ServiceRoleBinding.Type:   true,
+		model.RbacConfig.Type:           true,
 	}
 
 	// Headings for short format listing specific to type
@@ -388,6 +407,7 @@ istioctl get virtualservice bookinfo
 				ns, _ = handleNamespaces(namespace)
 			}
 
+			var errs error
 			var configs []model.Config
 			if getByName {
 				config, exists := configClient.Get(typs[0].Type, args[1], ns)
@@ -397,16 +417,19 @@ istioctl get virtualservice bookinfo
 			} else {
 				for _, typ := range typs {
 					typeConfigs, err := configClient.List(typ.Type, ns)
-					if err != nil {
-						return multierror.Prefix(err, fmt.Sprintf("Can't list %v:", typ.Type))
+					if err == nil {
+						configs = append(configs, typeConfigs...)
+					} else {
+						if mustList[typ.Type] {
+							errs = multierror.Append(errs, multierror.Prefix(err, fmt.Sprintf("Can't list %v:", typ.Type)))
+						}
 					}
-					configs = append(configs, typeConfigs...)
 				}
 			}
 
 			if len(configs) == 0 {
 				c.Println("No resources found.")
-				return nil
+				return errs
 			}
 
 			var outputters = map[string](func(io.Writer, model.ConfigStore, []model.Config)){
@@ -420,7 +443,7 @@ istioctl get virtualservice bookinfo
 				return fmt.Errorf("unknown output format %v. Types are yaml|short", outputFormat)
 			}
 
-			return nil
+			return errs
 		},
 
 		ValidArgs:  configTypeResourceNames(configTypes),
@@ -709,7 +732,7 @@ func readInputs() ([]model.Config, []crd.IstioKind, error) {
 	if err != nil {
 		return nil, nil, err
 	}
-	return crd.ParseInputs(string(input))
+	return crd.ParseInputsWithoutValidation(string(input))
 }
 
 // Print a simple list of names
